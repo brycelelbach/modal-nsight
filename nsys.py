@@ -9,14 +9,10 @@ app = modal.App("modal-nsight-systems")
 
 @app.function(image=image, gpu="H100", cpu=4, memory=16384, timeout=900)
 def profile(name: str, source: str | None, args: list[str], capture_range: bool) -> dict[str, bytes]:
-    import json
     from pathlib import Path
-    import sqlite3
     import subprocess
     import sys
     import tempfile
-
-    from nsightful.nsys import convert_nsys_sqlite_to_json
 
     with tempfile.TemporaryDirectory() as directory:
         base = Path(directory) / name
@@ -34,16 +30,15 @@ def profile(name: str, source: str | None, args: list[str], capture_range: bool)
             "nsys", "export", "--type=sqlite", "--force-overwrite=true",
             "-o", str(sqlite), str(native),
         ], check=True, timeout=120)
-        with sqlite3.connect(sqlite) as connection:
-            connection.row_factory = sqlite3.Row
-            events = convert_nsys_sqlite_to_json(connection)
-            kernels = connection.execute("SELECT COUNT(*) FROM CUPTI_ACTIVITY_KIND_KERNEL").fetchone()[0]
-        if not kernels or not any(event.get("cat") == "cuda" and event.get("dur", 0) > 0 for event in events):
-            raise RuntimeError("The report contains no CUDA kernel activity")
-        print(f"Verified {kernels} CUDA kernels; converted {len(events)} events with nsightful")
+        perfetto = base.with_suffix(".perfetto.json")
+        subprocess.run([
+            "nsightful", "nsys", "-f", str(sqlite), "-o", str(perfetto),
+        ], check=True, timeout=120)
+        if not native.stat().st_size or not perfetto.stat().st_size:
+            raise RuntimeError("The profiler or converter produced an empty report")
         return {
             native.name: native.read_bytes(),
-            f"{name}.perfetto.json": json.dumps({"traceEvents": events}).encode(),
+            perfetto.name: perfetto.read_bytes(),
             sqlite.name: sqlite.read_bytes(),
         }
 

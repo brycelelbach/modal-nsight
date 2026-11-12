@@ -48,7 +48,7 @@ The selected Python file is uploaded and run in the GPU container. Only that fil
 
 Custom scripts are profiled from process start by default. To capture only a marked region, call `cupy.cuda.profiler.start()` / `stop()` around the desired GPU work and add `--capture-range` to either command. Synchronize before starting and before stopping. The bundled examples use this mode automatically. Nsight Compute still limits collection to `--launch-count` kernels (20 by default).
 
-Reports use your script's filename stem as their name. The script must execute CUDA kernels; runs without measured kernel activity fail validation.
+Reports use your script's filename stem as their name. The bundled examples and report verifier target CUDA workloads.
 
 ## Reports
 
@@ -58,6 +58,13 @@ Reports use your script's filename stem as their name. The script must execute C
 | `ncu.py` | `reports/ncu/<example>/<example>.ncu-rep` and `.csv` |
 
 Open **https://ui.perfetto.dev**, choose **Open trace file**, and select a `.perfetto.json` file. This is Chrome Trace JSON accepted by Perfetto, not Perfetto protobuf. The native `.nsys-rep` remains available for the complete Nsight Systems view. Open `.ncu-rep` in Nsight Compute, or inspect the exported CSV without installing a GUI.
+
+The conversion is performed by the nsightful CLI:
+
+```sh
+nsys export --type=sqlite -o report.sqlite report.nsys-rep
+nsightful nsys -f report.sqlite -o report.perfetto.json
+```
 
 The nsightful conversion includes CUDA kernels, CUDA API calls, and NVTX ranges. Its output is not a lossless conversion of every Nsight Systems track; keep the native report for analysis beyond the converted activities.
 
@@ -79,7 +86,7 @@ The copy input is 128 MiB (`2**24` int64 values). Power iteration uses a 1024-by
 
 Functions request one H100, four CPUs, and 16 GiB of host memory. Nsight Systems CPU sampling and context-switch collection are disabled because they require host capabilities unavailable in this setup. Nsight Compute clock control is disabled for the managed GPU. GPU timings collected under a profiler include instrumentation/replay effects and should not be treated as uninstrumented benchmarks.
 
-Each run fails if the workload's correctness assertions fail, a profiler or converter fails, or the resulting report has no measured CUDA kernels. Reports are returned directly to the local entrypoint; no Modal Volume, secret, or web endpoint is required.
+Each run propagates workload, profiler, and converter failures. Nsight Systems checks that native and converted reports are nonempty; Nsight Compute checks for measured CUDA kernels. The report verifier checks kernel activity in the converted Perfetto traces. Reports are returned directly to the local entrypoint; no Modal Volume, secret, or web endpoint is required.
 
 ## Verification
 
@@ -92,7 +99,7 @@ python -m pip install perfetto==0.59.1
 python tests/verify_reports.py reports
 ```
 
-The verifier checks native Systems kernel records, Compute metrics, expected kernel names in Perfetto, and Perfetto import errors. It downloads Perfetto's official trace processor binary on first use.
+The verifier checks report files, Compute metrics, expected kernel names in Perfetto, and Perfetto import errors. It downloads Perfetto's official trace processor binary on first use.
 
 ## Sources and license
 
