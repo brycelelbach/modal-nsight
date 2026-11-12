@@ -1,0 +1,8 @@
+Modal Nsight includes adapted code from NVIDIA's Accelerated Computing Hub.
+Source: https://github.com/brycelelbach/accelerated-computing-hub
+Revision: 231ede9f433ee6513dd79ca88642cb842a9c04c3
+Original authors: NVIDIA Corporation and Accelerated Computing Hub contributors.
+The upstream notebook code is licensed under Apache License 2.0 (LICENSE-CODE).
+Modifications: standalone entrypoints, smaller defaults, profiler controls,
+NVTX ranges, warmup, and additional correctness checks; notebook presentation
+and benchmarking scaffolding removed. See README.md for individual sources.

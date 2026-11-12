@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+reports/
+*.nsys-rep
+*.ncu-rep
+*.sqlite
+*.perfetto.json
