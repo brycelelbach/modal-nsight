@@ -1,11 +1,11 @@
 # Modal Nsight
 
-Two small Modal scripts for profiling Accelerated Computing Hub (ACH) examples on an H100:
+Two small Modal scripts for profiling Python GPU workloads on an H100:
 
 - `nsys.py` collects a native Nsight Systems report and uses **nsightful** to produce a Perfetto-compatible Chrome Trace JSON file. It also saves the intermediate SQLite export.
 - `ncu.py` collects a native Nsight Compute report and exports kernel metrics to CSV.
 
-Both scripts run the same three examples. There is no notebook or desktop server to deploy. A run starts a GPU function, downloads its reports to your machine, and exits.
+Both scripts accept a standalone Python script or run the three bundled examples. A run starts a GPU function, downloads its reports to your machine, and exits.
 
 ## Run
 
@@ -37,6 +37,19 @@ python -m modal run ncu.py --example histogram --metric-set full --launch-count 
 
 `--example` accepts `all` (the default), `power_iteration`, `memcopy`, or `histogram`. Runs are sequential. Re-running overwrites reports with the same names in the selected output directory.
 
+## Profile your own script
+
+```sh
+python -m modal run nsys.py --script my_workload.py
+python -m modal run ncu.py --script my_workload.py --script-args="--size 1048576"
+```
+
+The selected Python file is uploaded and run in the GPU container. Only that file is uploaded; package any additional modules or data in the image defined in `common.py`. Add workload dependencies to that image's `pip_install` list. Script arguments are split using shell-style quoting and passed directly to Python without a shell.
+
+Custom scripts are profiled from process start by default. To capture only a marked region, call `cupy.cuda.profiler.start()` / `stop()` around the desired GPU work and add `--capture-range` to either command. Synchronize before starting and before stopping. The bundled examples use this mode automatically. Nsight Compute still limits collection to `--launch-count` kernels (20 by default).
+
+Reports use your script's filename stem as their name. The script must execute CUDA kernels; runs without measured kernel activity fail validation.
+
 ## Reports
 
 | Script | Local outputs for each example |
@@ -58,11 +71,11 @@ The nsightful conversion includes CUDA kernels, CUDA API calls, and NVTX ranges.
 
 Each example warms up before calling `cudaProfilerStart`, synchronizes before `cudaProfilerStop`, and validates its result afterward. NVTX labels identify the algorithms and variants. Nsight Systems captures the whole marked region. Nsight Compute defaults to the **basic** metric set and at most **20 kernel launches** in that region; it does not profile the whole power-iteration loop by default. Increase `--launch-count` as needed, or choose `--metric-set detailed` / `full` for more counters and additional replay overhead. The copy and histogram defaults include both variants.
 
-The copy input is 128 MiB (`2**24` int64 values). Power iteration uses a 1024-by-1024 matrix and a larger eigenvalue gap than the notebook to keep the run short. The histogram downloads the original notebook's book dataset from its Google Drive URL before capture. Internet access to that URL is required. Data generation, JIT compilation, and correctness checks are outside the captured region. The power-iteration checkpoint transfer is retained, but checkpoint text-file writes, plots, notebook magics, and timing sweeps are omitted.
+The copy input is 128 MiB (`2**24` int64 values). Power iteration uses a 1024-by-1024 matrix with a 0.2 eigenvalue gap. The histogram downloads a book dataset from its Google Drive URL before capture. Internet access to that URL is required. Data generation, JIT compilation, and correctness checks are outside the captured region. Power iteration includes device-to-host checkpoint transfers.
 
 ## Container and profiler settings
 
-`common.py` uses the ACH tutorial container pinned by SHA-256, retaining its CUDA/CuPy/Numba/CCCL and Nsight installations. It installs nsightful from a pinned Git revision. Container and converter revisions are explicit constants in that file. The original tutorial image's GUI startup is bypassed; the scripts call the real profiler binaries through `ACH_NSYS_PATH` and `ACH_NCU_PATH`.
+`common.py` builds from NVIDIA's CUDA 13.2.1 development image with Python 3.12. It installs Nsight Systems 2026.1.1 and Nsight Compute 2026.1.1 directly and places `nsys` and `ncu` on `PATH`. The image also installs CuPy, Numba, CCCL, NVTX, and a pinned nsightful revision. The profiler scripts use standard executable names and have no project-specific environment variables. Versions and dependencies are explicit in `common.py`.
 
 Functions request one H100, four CPUs, and 16 GiB of host memory. Nsight Systems CPU sampling and context-switch collection are disabled because they require host capabilities unavailable in this setup. Nsight Compute clock control is disabled for the managed GPU. GPU timings collected under a profiler include instrumentation/replay effects and should not be treated as uninstrumented benchmarks.
 
@@ -70,15 +83,7 @@ Each run fails if the workload's correctness assertions fail, a profiler or conv
 
 ## Verification
 
-Validated on 2026-11-12 in the `modal-labs` workspace using H100 GPUs. All three examples passed their correctness checks under both profilers. Perfetto trace processor v59.1 loaded all three JSON traces with zero import errors and found the expected kernel activity:
-
-| Example | Native Systems kernels | Compute measured kernels (basic) | Perfetto slices |
-| --- | ---: | ---: | ---: |
-| Power iteration | 717 | 20 | 2169 |
-| Memcopy | 2 | 2 | 12 |
-| Histogram | 2 | 2 | 12 |
-
-Counts and timings can vary between runs. The full-metrics histogram run also succeeded; six `ctc__rx_bytes_data_user` / `ctc__tx_bytes_data_user` metrics were unavailable and produced warnings. The default basic set avoids those unavailable counters.
+Validated on 2026-11-12 using H100 GPUs in `modal-labs`: all three bundled examples passed under both profilers, and Perfetto trace processor v59.1 loaded all three converted traces without import errors. Standalone-script runs also passed under both profilers with command-line arguments, using both full-process capture and explicit CUDA capture ranges.
 
 To repeat the report validation after running both scripts:
 

@@ -1,16 +1,15 @@
-"""Run ACH examples under Nsight Systems; download native and Perfetto traces."""
+"""Profile Python workloads with Nsight Systems; download native and Perfetto traces."""
 
 import modal
 
-from common import image, save_reports, select_examples
+from common import image, save_reports, workload_path, workloads
 
 app = modal.App("modal-nsight-systems")
 
 
 @app.function(image=image, gpu="H100", cpu=4, memory=16384, timeout=900)
-def profile(example: str) -> dict[str, bytes]:
+def profile(name: str, source: str | None, args: list[str], capture_range: bool) -> dict[str, bytes]:
     import json
-    import os
     from pathlib import Path
     import sqlite3
     import subprocess
@@ -19,20 +18,20 @@ def profile(example: str) -> dict[str, bytes]:
 
     from nsightful.nsys import convert_nsys_sqlite_to_json
 
-    select_examples(example)
-    nsys = os.environ["ACH_NSYS_PATH"]  # Real binary, not the tutorial's Docker wrapper.
     with tempfile.TemporaryDirectory() as directory:
-        base = Path(directory) / example
+        base = Path(directory) / name
+        program = workload_path(directory, name, source)
+        capture_options = ["--capture-range=cudaProfilerApi", "--capture-range-end=stop"] if capture_range else []
         command = [
-            nsys, "profile", "--force-overwrite=true", "--sample=none", "--cpuctxsw=none",
-            "--trace=cuda,nvtx", "--capture-range=cudaProfilerApi", "--capture-range-end=stop",
-            "-o", str(base), sys.executable, f"examples/{example}.py",
+            "nsys", "profile", "--force-overwrite=true", "--sample=none", "--cpuctxsw=none",
+            "--trace=cuda,nvtx", *capture_options,
+            "-o", str(base), sys.executable, str(program), *args,
         ]
         subprocess.run(command, check=True, timeout=600)
         native = base.with_suffix(".nsys-rep")
         sqlite = base.with_suffix(".sqlite")
         subprocess.run([
-            nsys, "export", "--type=sqlite", "--force-overwrite=true",
+            "nsys", "export", "--type=sqlite", "--force-overwrite=true",
             "-o", str(sqlite), str(native),
         ], check=True, timeout=120)
         with sqlite3.connect(sqlite) as connection:
@@ -44,12 +43,12 @@ def profile(example: str) -> dict[str, bytes]:
         print(f"Verified {kernels} CUDA kernels; converted {len(events)} events with nsightful")
         return {
             native.name: native.read_bytes(),
-            f"{example}.perfetto.json": json.dumps({"traceEvents": events}).encode(),
+            f"{name}.perfetto.json": json.dumps({"traceEvents": events}).encode(),
             sqlite.name: sqlite.read_bytes(),
         }
 
 
 @app.local_entrypoint()
-def main(example: str = "all", output_dir: str = "reports/nsys"):
-    for name in select_examples(example):
-        save_reports(output_dir, name, profile.remote(name))
+def main(example: str = "all", output_dir: str = "reports/nsys", script: str = "", script_args: str = "", capture_range: bool = False):
+    for name, source, args in workloads(example, script, script_args):
+        save_reports(output_dir, name, profile.remote(name, source, args, capture_range or source is None))

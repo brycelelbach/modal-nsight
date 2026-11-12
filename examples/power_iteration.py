@@ -1,4 +1,4 @@
-"""Adapted from ACH's 05 memory-spaces power-iteration solution (Apache-2.0)."""
+"""Estimate the dominant eigenvalue with CuPy power iteration."""
 
 from dataclasses import dataclass, replace
 
@@ -34,7 +34,7 @@ def estimate_device(A, cfg):
         lam = (x @ y) / (x @ x)
         res = cp.linalg.norm(y - lam * x)
         x = y / cp.linalg.norm(y)
-        # Preserve the notebook's device-to-host checkpoint transfer, but omit text I/O.
+        # Copy checkpoint data to the host.
         cp.asnumpy(x)
         if res < cfg.residual_threshold:
             break

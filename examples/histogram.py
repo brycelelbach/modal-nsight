@@ -1,4 +1,4 @@
-"""ACH notebook 41: book-byte histograms with global/shared atomics (Apache-2.0)."""
+"""Compare book-byte histograms using global and shared-memory atomics."""
 
 from pathlib import Path
 import urllib.request
@@ -53,7 +53,7 @@ def main():
             path.write_bytes(response.read())
     host = np.fromfile(path, dtype=np.uint8)
     if host.size == 0 or host.size % items_per_block:
-        raise ValueError("The tutorial book dataset must be nonempty and a multiple of 4096 bytes")
+        raise ValueError("The book dataset must be nonempty and a multiple of 4096 bytes")
     values = cp.asarray(host)
     blocks = values.size // items_per_block
     global_result = cp.zeros(bins, dtype=cp.int32)

@@ -1,4 +1,4 @@
-"""ACH notebook 40: blocked and coalesced device copy kernels (Apache-2.0)."""
+"""Compare blocked and coalesced device copy kernels."""
 
 import cupy as cp
 from numba import cuda
